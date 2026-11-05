@@ -15,6 +15,7 @@ import { ConditionPanel } from './ui/ConditionPanel';
 import { SkillCards } from './ui/SkillCards';
 import { InfoButton, STRATEGY_COLORS, Warnings } from './ui/common';
 import { buildMotion, initialMotionState } from './ui/motionState';
+import { Level3View } from './ui/level3/Level3View';
 
 export const DISCLAIMER = '本ツールは研究仮説を理解するための概念モデルです。人の身体や特定の研究結果を再現したものではありません。';
 
@@ -33,6 +34,7 @@ export default function App() {
   const [conditions, setConditions] = useState<Conditions>(NO_CONDITIONS);
   const [res, setRes] = useState<{ base: Experiment; cond: Experiment | null; ms: number } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [tab, setTab] = useState<'l12' | 'l3'>('l12');
 
   const worker = useRef<Worker | null>(null);
   const [wk, setWk] = useState<Worker | null>(null);
@@ -80,6 +82,15 @@ export default function App() {
         <InfoButton k="kinematics" /><InfoButton k="ik" />
         <span className="small muted">{busy ? '計算中…' : res ? `計算時間 ${(res.ms / 1000).toFixed(1)} s（${view?.pool.length} 戦略）` : ''}</span>
       </div>
+      <div className="tabs">
+        <button className={tab === 'l12' ? 'on' : ''} onClick={() => setTab('l12')}>Level 1・2｜動作合成・コスト最適化</button>
+        <button className={tab === 'l3' ? 'on' : ''} onClick={() => setTab('l3')}>Level 3｜戦略発見</button>
+      </div>
+      {/* タブを切り替えても各画面の状態を保つため、非表示にするだけで描画は続ける */}
+      <div style={{ display: tab === 'l3' ? 'block' : 'none' }}>
+        <Level3View base={res?.base ?? null} applyToLevel2={(nw) => { setW(nw); setTab('l12'); }} />
+      </div>
+      <div style={{ display: tab === 'l12' ? 'block' : 'none' }}>
       <div className="grid-top">
         <div className="panel"><PrimitivePanel s={ms} set={setMs} /></div>
         <div className="panel">
@@ -113,6 +124,7 @@ export default function App() {
       </div>
       <div className="panel full">
         <SkillCards worker={wk} />
+      </div>
       </div>
     </div>
   );

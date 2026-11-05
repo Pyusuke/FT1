@@ -75,3 +75,17 @@ canvas { display: block; width: 100%; background: #fbfcfe; border: 1px solid var
 .two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 @media (max-width: 900px) { .two { grid-template-columns: 1fr; } }
 .scroll-x { overflow-x: auto; }
+/* ---- タブ・Level 3 ---- */
+.tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--accent); margin-bottom: 10px; }
+.tabs button { border-radius: 6px 6px 0 0; border-bottom: none; padding: 7px 14px; font-weight: 600; }
+.tabs button.on { background: var(--accent); color: #fff; }
+.disclaimer.l3 { position: static; background: #eef3fc; border-color: #7a9be0; }
+.stepper { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+.stepper .step { flex: 1; min-width: 150px; text-align: left; }
+.stepper .step.done { background: #eef3fc; }
+.lead { background: #f3f5f8; border-left: 4px solid var(--accent); padding: 6px 10px; margin-bottom: 10px; }
+.step-nav { justify-content: space-between; margin-top: 14px; }
+.bar { background: #edf0f5; height: 10px; border-radius: 5px; overflow: hidden; }
+.bar > div { height: 100%; }
+.reason { background: #fbf7ea; border: 1px solid #e8d9a8; border-radius: 6px; padding: 6px 10px; margin-top: 6px; }
+button:disabled { opacity: .45; cursor: default; }
