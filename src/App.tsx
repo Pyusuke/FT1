@@ -88,7 +88,7 @@ export default function App() {
       </div>
       {/* タブを切り替えても各画面の状態を保つため、非表示にするだけで描画は続ける */}
       <div style={{ display: tab === 'l3' ? 'block' : 'none' }}>
-        <Level3View base={res?.base ?? null} applyToLevel2={(nw) => { setW(nw); setTab('l12'); }} />
+        <Level3View base={res?.base ?? null} applyToLevel2={(nw) => { setW(nw); setTab('l12'); }} worker={wk} ms={ms} />
       </div>
       <div style={{ display: tab === 'l12' ? 'block' : 'none' }}>
       <div className="grid-top">

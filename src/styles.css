@@ -89,3 +89,5 @@ canvas { display: block; width: 100%; background: #fbfcfe; border: 1px solid var
 .bar > div { height: 100%; }
 .reason { background: #fbf7ea; border: 1px solid #e8d9a8; border-radius: 6px; padding: 6px 10px; margin-top: 6px; }
 button:disabled { opacity: .45; cursor: default; }
+.mode-switch { margin: 0 0 10px; }
+.panel.validation { border: 2px dashed #e0b030; }

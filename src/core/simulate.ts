@@ -4,7 +4,7 @@ import type { Vec } from './linalg';
 import {
   ArmModel, IKOptions, Vec2, fk, gravityTorque, ikStep, jacobian, massMatrix, reachRadius, solveIK, taskError, wrapAngle,
 } from './kinematics';
-import { matVec, transpose } from './linalg';
+import { matVec, mulberry32, transpose } from './linalg';
 import type { MotionFn } from './composition';
 import type { ContactInfo } from './primitives';
 
@@ -42,6 +42,10 @@ export interface SimOptions {
   qInit?: Vec;
   /** 最短時間の下限 [s] */
   minDuration?: number;
+  /** limited モードで、フィードバックに使う手先の観測値に加えるセンサーノイズ（標準偏差 [m]、シード固定） */
+  tipNoise?: { sigma: number; seed: number } | null;
+  /** 速度・加速度・所要時間の推定に使う移動平均の半幅（サンプル数）。0 または未指定なら平滑化しない */
+  smoothing?: number;
   /** false ならトルク計算・警告を省く（頑健性評価の内部用） */
   dynamics?: boolean;
 }
@@ -91,6 +95,7 @@ export function simulate(arm: ArmModel, motion: MotionFn, strat: StrategyParams,
   const q0 = opts.qInit ?? solveIK(arm, target[0], seed, { ...ikOpt(0), kNull: 0.1 }).q;
   const q: Vec[] = [q0];
   const Kinv = arm.stiffness.map((k) => 1 / k);
+  const noise = opts.tipNoise && opts.tipNoise.sigma > 0 ? gaussian(mulberry32(opts.tipNoise.seed), opts.tipNoise.sigma) : null;
   const dist = opts.disturbance;
 
   // 収束モードの1サンプル分の更新（タスク項＋ヌル空間項を固定回数、その後タスク項のみで仕上げ）
@@ -124,9 +129,11 @@ export function simulate(arm: ArmModel, motion: MotionFn, strat: StrategyParams,
     } else {
       // フィードフォワード（目標の差分）＋ フィードバック（ゲイン g）
       const f = fk(arm, qk);
+      const mx = f.tip[0] + (noise ? noise() : 0);
+      const my = f.tip[1] + (noise ? noise() : 0);
       const dx = [
-        target[k][0] - target[k - 1][0] + g * (target[k - 1][0] - f.tip[0]),
-        target[k][1] - target[k - 1][1] + g * (target[k - 1][1] - f.tip[1]),
+        target[k][0] - target[k - 1][0] + g * (target[k - 1][0] - mx),
+        target[k][1] - target[k - 1][1] + g * (target[k - 1][1] - my),
       ];
       if (o.phiTarget !== undefined) dx.push(g * wrapAngle(o.phiTarget - f.phi));
       const dq = ikStep(arm, qk, dx, o, true);
@@ -148,22 +155,25 @@ export function simulate(arm: ArmModel, motion: MotionFn, strat: StrategyParams,
 
   // 時間の伸縮：各関節の最大角速度を守る最短時間
   const dtau = 1 / (n - 1);
+  // 速度・加速度・所要時間の推定に使う関節軌道。smoothing > 0 なら移動平均で平滑化したものを使う
+  // （センサーノイズや外乱による細かな揺れを、差分で増幅して見かけの慣性トルクにしないため）。関節角 q 自体は平滑化しない。
+  const qs = opts.smoothing ? smoothSeries(q, opts.smoothing) : q;
   let T = opts.minDuration ?? 0.3;
   for (let k = 1; k < n; k++)
     for (let i = 0; i < 3; i++) {
       if (arm.lockedJoint === i) continue;
-      T = Math.max(T, Math.abs(q[k][i] - q[k - 1][i]) / dtau / arm.vMax[i]);
+      T = Math.max(T, Math.abs(qs[k][i] - qs[k - 1][i]) / dtau / arm.vMax[i]);
     }
   const dt = T * dtau;
 
-  const qd = q.map((_, k) => {
-    const a = q[Math.max(0, k - 1)], b = q[Math.min(n - 1, k + 1)];
+  const qd = qs.map((_, k) => {
+    const a = qs[Math.max(0, k - 1)], b = qs[Math.min(n - 1, k + 1)];
     const h = (Math.min(n - 1, k + 1) - Math.max(0, k - 1)) * dt;
     return a.map((x, i) => (b[i] - x) / h);
   });
-  const qdd = q.map((_, k) => {
+  const qdd = qs.map((_, k) => {
     if (k === 0 || k === n - 1) return [0, 0, 0];
-    return q[k].map((x, i) => (q[k + 1][i] - 2 * x + q[k - 1][i]) / (dt * dt));
+    return qs[k].map((x, i) => (qs[k + 1][i] - 2 * x + qs[k - 1][i]) / (dt * dt));
   });
 
   // 接触力（仮想ばね）と摩擦
@@ -269,3 +279,22 @@ export function jointAllocation(arm: ArmModel, r: SimResult): Vec {
 }
 
 export const rms = (xs: number[]) => Math.sqrt(xs.reduce((s, x) => s + x * x, 0) / Math.max(1, xs.length));
+
+/** Box–Muller 法による正規乱数（平均 0、標準偏差 sigma） */
+export function gaussian(rnd: () => number, sigma = 1): () => number {
+  return () => {
+    const u = Math.max(1e-12, rnd()), v = rnd();
+    return sigma * Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  };
+}
+
+/** 中心移動平均（半幅 h、端は窓を縮める）を2回かける */
+function smoothSeries(q: Vec[], h: number): Vec[] {
+  const once = (x: Vec[]) => x.map((_, k) => {
+    const a = Math.max(0, k - h), b = Math.min(x.length - 1, k + h);
+    const s = [0, 0, 0];
+    for (let j = a; j <= b; j++) for (let i = 0; i < 3; i++) s[i] += x[j][i];
+    return s.map((v) => v / (b - a + 1));
+  });
+  return once(once(q));
+}

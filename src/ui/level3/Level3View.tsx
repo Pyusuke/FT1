@@ -1,8 +1,13 @@
 import { ReactNode, useState } from 'react';
 import type { Weights } from '../../core/cost';
 import type { Experiment } from '../../core/experiment';
-import { presetWeights, findPreset } from '../../core/level3/objectives';
+import { presetWeights, findPreset, normalizeWeights } from '../../core/level3/objectives';
+import { DEFAULT_TRIAL_SETTINGS, TrialSettings } from '../../core/level3/trials';
+import type { MotionUIState } from '../motionState';
 import { Step1Objective } from './Step1Objective';
+import { Step2Trials } from './Step2Trials';
+import { ValidationMode } from './ValidationMode';
+import { useWorkerJob } from './useWorkerJob';
 
 export const L3_DISCLAIMER =
   '本機能はシミュレーション上の統計的な傾向を示す概念モデルです。人の身体や身体感覚、特定の研究結果を再現したものではありません。ばらつきの傾向や関連は、因果関係を示しません。';
@@ -20,21 +25,42 @@ export const STEPS: StepDef[] = [
 export interface Level3Props {
   base: Experiment | null;
   applyToLevel2: (w: Weights) => void;
+  worker: Worker | null;
+  ms: MotionUIState;
 }
 
-export function Level3View({ base, applyToLevel2 }: Level3Props) {
+export function Level3View({ base, applyToLevel2, worker, ms }: Level3Props) {
+  const [mode, setMode] = useState<'analysis' | 'validation'>('analysis');
   const [step, setStep] = useState(0);
   const [presetId, setPresetId] = useState('fastest');
   const [userW, setUserW] = useState<Weights>(() => presetWeights(findPreset('fastest')));
+  const [settings, setSettings] = useState<TrialSettings>(DEFAULT_TRIAL_SETTINGS);
+  const trials = useWorkerJob(worker, 'trials');
+  const weights = normalizeWeights(userW);
+  const preset = findPreset(presetId);
 
   let body: ReactNode;
   if (step === 0)
     body = <Step1Objective base={base} presetId={presetId} setPresetId={setPresetId} userW={userW} setUserW={setUserW} applyToLevel2={applyToLevel2} />;
+  else if (step === 1)
+    body = (
+      <Step2Trials ms={ms} weights={weights} presetLabel={preset.label} settings={settings} setSettings={setSettings}
+        set={trials.result?.set ?? null} busy={trials.busy} elapsedMs={trials.result?.ms ?? null}
+        generate={() => trials.run({ ms, weights, settings })} />
+    );
   else body = <p className="muted">この手順は次のフェーズで実装します。</p>;
 
   return (
     <div>
       <div className="disclaimer l3">{L3_DISCLAIMER}</div>
+      <div className="btns mode-switch">
+        <button className={mode === 'analysis' ? 'on' : ''} onClick={() => setMode('analysis')}>本番の分析（手順 1〜5）</button>
+        <button className={mode === 'validation' ? 'on' : ''} onClick={() => setMode('validation')}>手法の検証モード</button>
+      </div>
+      <div style={{ display: mode === 'validation' ? 'block' : 'none' }}>
+        <ValidationMode worker={worker} ms={ms} />
+      </div>
+      <div style={{ display: mode === 'analysis' ? 'block' : 'none' }}>
       <div className="stepper">
         {STEPS.map((s, i) => (
           <button key={s.title} className={`step ${i === step ? 'on' : ''} ${i < step ? 'done' : ''}`} onClick={() => setStep(i)}>
@@ -50,6 +76,7 @@ export function Level3View({ base, applyToLevel2 }: Level3Props) {
           <button disabled={step === 0} onClick={() => setStep((s) => s - 1)}>← 戻る</button>
           <button className="on" disabled={step === STEPS.length - 1} onClick={() => setStep((s) => s + 1)}>次へ →</button>
         </div>
+      </div>
       </div>
     </div>
   );
