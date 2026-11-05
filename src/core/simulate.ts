@@ -42,6 +42,8 @@ export interface SimOptions {
   qInit?: Vec;
   /** 最短時間の下限 [s] */
   minDuration?: number;
+  /** false ならトルク計算・警告を省く（頑健性評価の内部用） */
+  dynamics?: boolean;
 }
 
 export interface Warning {
@@ -85,7 +87,8 @@ export function simulate(arm: ArmModel, motion: MotionFn, strat: StrategyParams,
   const ikOpt = (x: number): IKOptions => ({ w: wAt(x), qPref: strat.qPref, kNull: strat.kNull, lambda, phiTarget: phiAt(x) });
 
   // 初期姿勢：好みの姿勢から出発し、ヌル空間項も収束させる
-  const q0 = opts.qInit ?? solveIK(arm, target[0], strat.qPref, { ...ikOpt(0), kNull: 0.1 }).q;
+  const seed = strat.qPref.map((x, i) => (arm.lockedJoint === i ? (arm.qMin[i] + arm.qMax[i]) / 2 : x));
+  const q0 = opts.qInit ?? solveIK(arm, target[0], seed, { ...ikOpt(0), kNull: 0.1 }).q;
   const q: Vec[] = [q0];
   const Kinv = arm.stiffness.map((k) => 1 / k);
   const dist = opts.disturbance;
@@ -102,7 +105,7 @@ export function simulate(arm: ArmModel, motion: MotionFn, strat: StrategyParams,
     }
     for (let it = 0; it < 60; it++) {
       const e2 = taskError(arm, qk, tg, o.phiTarget);
-      if (Math.hypot(e2[0], e2[1]) < 1e-7 && (e2.length < 3 || Math.abs(e2[2]) < 1e-6)) break;
+      if (Math.hypot(e2[0], e2[1]) < 1e-6 && (e2.length < 3 || Math.abs(e2[2]) < 1e-5)) break;
       const d2 = ikStep(arm, qk, e2, o, false);
       qk = qk.map((x, i) => x + d2[i]);
     }
@@ -110,7 +113,7 @@ export function simulate(arm: ArmModel, motion: MotionFn, strat: StrategyParams,
   };
   if (!opts.qInit && mode === 'converged') {
     // 予備反復：開始点で追従時と同じ更新を繰り返し、t=0 で定常な姿勢から始める（初期の跳びを防ぐ）
-    for (let it = 0; it < 150; it++) q[0] = convergedUpdate(q[0], target[0], ikOpt(0));
+    for (let it = 0; it < 80; it++) q[0] = convergedUpdate(q[0], target[0], ikOpt(0));
   }
 
   for (let k = 1; k < n; k++) {
@@ -190,6 +193,13 @@ export function simulate(arm: ArmModel, motion: MotionFn, strat: StrategyParams,
     slip.push(Math.tan(Math.min(tilt, 1.5)) > mu);
   }
 
+  if (opts.dynamics === false) {
+    const zero = q.map(() => [0, 0, 0]);
+    return {
+      t, q, tip, target, phi, tipError, T, qd, qdd, tau: zero, contactForce, toolTilt, slip, warnings: [],
+      wristConstrained: !!opts.phiTarget,
+    };
+  }
   const tau = q.map((qq, k) => {
     const M = massMatrix(arm, qq);
     const gr = gravityTorque(arm, qq);

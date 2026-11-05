@@ -1,7 +1,7 @@
 // 平面3リンクアームの順運動学（FK）・ヤコビアン・逆運動学（IK）・簡易動力学。
 // 座標系：根元（肩）が原点、x 右向き、y 上向き。重力は -y 方向。
 // 関節角は相対角：θ1 = q1, θ2 = q1+q2, θ3 = q1+q2+q3（いずれも x 軸から反時計回り）。
-import { Mat, Vec, diag, eye, inverse, matMul, matVec, transpose, zeros, rad } from './linalg';
+import { Mat, Vec, matVec, transpose, rad } from './linalg';
 
 export type Vec2 = [number, number];
 
@@ -78,38 +78,26 @@ export function jacobian3(arm: ArmModel, q: Vec): Mat {
   return [...jacobian(arm, q), [1, 1, 1]];
 }
 
-/** 点 c に対する、関節 i（i ≤ j）の位置ヤコビアン列：ẑ × (c − p_i) */
-function pointJacobian(points: Vec2[], c: Vec2, upto: number): Mat {
-  const J = zeros(2, 3);
-  for (let i = 0; i <= upto; i++) {
-    J[0][i] = -(c[1] - points[i][1]);
-    J[1][i] = c[0] - points[i][0];
-  }
-  return J;
-}
-
-/** 慣性行列 M(q)（3×3）。各リンクを一様棒、荷物を手先の質点とする。コリオリ項は省略。 */
+/** 慣性行列 M(q)（3×3）。各リンクを一様棒、荷物を手先の質点とする。コリオリ項は省略。
+ *  M = Σ_j m_j Jc_jᵀ Jc_j + I_j Jω_jᵀ Jω_j  （+ 荷物 m_p J_tipᵀ J_tip） */
 export function massMatrix(arm: ArmModel, q: Vec): Mat {
   const { points, theta } = fk(arm, q);
-  let M = zeros(3, 3);
-  for (let j = 0; j < 3; j++) {
-    const c: Vec2 = [
-      points[j][0] + 0.5 * arm.L[j] * Math.cos(theta[j]),
-      points[j][1] + 0.5 * arm.L[j] * Math.sin(theta[j]),
-    ];
-    const Jc = pointJacobian(points, c, j);
-    const JtJ = matMul(transpose(Jc), Jc);
-    const I = (arm.m[j] * arm.L[j] * arm.L[j]) / 12;
+  const M = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+  const addPoint = (cx: number, cy: number, upto: number, mass: number, inertia: number) => {
+    const jx = [0, 0, 0], jy = [0, 0, 0];
+    for (let i = 0; i <= upto; i++) {
+      jx[i] = -(cy - points[i][1]);
+      jy[i] = cx - points[i][0];
+    }
     for (let a = 0; a < 3; a++)
-      for (let b = 0; b < 3; b++) {
-        M[a][b] += arm.m[j] * JtJ[a][b] + (a <= j && b <= j ? I : 0);
-      }
+      for (let b = 0; b < 3; b++) M[a][b] += mass * (jx[a] * jx[b] + jy[a] * jy[b]) + (a <= upto && b <= upto ? inertia : 0);
+  };
+  for (let j = 0; j < 3; j++) {
+    const cx = points[j][0] + 0.5 * arm.L[j] * Math.cos(theta[j]);
+    const cy = points[j][1] + 0.5 * arm.L[j] * Math.sin(theta[j]);
+    addPoint(cx, cy, j, arm.m[j], (arm.m[j] * arm.L[j] * arm.L[j]) / 12);
   }
-  if (arm.payload > 0) {
-    const Jt = pointJacobian(points, points[3], 2);
-    const JtJ = matMul(transpose(Jt), Jt);
-    M = M.map((row, a) => row.map((x, b) => x + arm.payload * JtJ[a][b]));
-  }
+  if (arm.payload > 0) addPoint(points[3][0], points[3][1], 2, arm.payload, 0);
   return M;
 }
 
@@ -166,27 +154,66 @@ export const LIMIT_MARGIN = 0.15;
  * includeNull=false のとき第2項を省く（修正反復用）。
  */
 export function ikStep(arm: ArmModel, q: Vec, dx: Vec, opt: IKOptions, includeNull = true): Vec {
-  const solve = (w: Vec): Vec => {
-    const J = opt.phiTarget === undefined ? jacobian(arm, q) : jacobian3(arm, q);
-    const m = J.length;
-    const Winv = diag(w.map((x) => 1 / x));
-    const Jt = transpose(J);
-    const WJt = matMul(Winv, Jt);
-    const A = matMul(J, WJt);
-    const Ad = A.map((row, i) => row.map((x, j) => x + (i === j ? opt.lambda * opt.lambda : 0)));
-    const Adinv = inverse(Ad) ?? eye(m);
-    const dqTask = matVec(matMul(WJt, Adinv), dx);
-    if (!includeNull || m === 3 || opt.kNull === 0) return dqTask;
-    const A0 = A.map((row, i) => row.map((x, j) => x + (i === j ? 1e-6 : 0)));
-    const A0inv = inverse(A0) ?? eye(m);
-    const Jplus = matMul(WJt, A0inv); // 3×2
-    const P = matMul(Jplus, J); // 3×3
-    const N = eye(3).map((row, i) => row.map((x, j) => x - P[i][j]));
-    const pull = opt.qPref.map((qp, i) => opt.kNull * (qp - q[i]));
-    const dqNull = matVec(N, pull);
-    return dqTask.map((x, i) => x + dqNull[i]);
-  };
-  return solve(limitAwareWeights(arm, q, opt.w));
+  // 小さな行列なので、数式どおりに展開して書く（行列ライブラリを使わず高速化）
+  const w = limitAwareWeights(arm, q, opt.w);
+  const J = opt.phiTarget === undefined ? jacobian(arm, q) : jacobian3(arm, q);
+  const m = J.length;
+  const wi0 = 1 / w[0], wi1 = 1 / w[1], wi2 = 1 / w[2];
+  const l2 = opt.lambda * opt.lambda;
+  // A = J W⁻¹ Jᵀ（+ λ²I）
+  const A: number[][] = [];
+  const A0: number[][] = [];
+  for (let a = 0; a < m; a++) {
+    const ra: number[] = [], r0: number[] = [];
+    for (let b = 0; b < m; b++) {
+      const v = J[a][0] * wi0 * J[b][0] + J[a][1] * wi1 * J[b][1] + J[a][2] * wi2 * J[b][2];
+      ra.push(v + (a === b ? l2 : 0));
+      r0.push(v + (a === b ? 1e-6 : 0));
+    }
+    A.push(ra);
+    A0.push(r0);
+  }
+  const y = solveSmall(A, dx);
+  // dq_task = W⁻¹ Jᵀ y
+  let s0 = 0, s1 = 0, s2 = 0;
+  for (let a = 0; a < m; a++) { s0 += J[a][0] * y[a]; s1 += J[a][1] * y[a]; s2 += J[a][2] * y[a]; }
+  const dq = [wi0 * s0, wi1 * s1, wi2 * s2];
+  if (!includeNull || m === 3 || opt.kNull === 0) return dq;
+  // ヌル空間項：(I − J⁺J)·pull = pull − W⁻¹Jᵀ (JW⁻¹Jᵀ)⁻¹ (J·pull)
+  // 故障で固定した関節はヌル空間項でも動かさない
+  const L = arm.lockedJoint;
+  const p0 = L === 0 ? 0 : opt.kNull * (opt.qPref[0] - q[0]);
+  const p1 = L === 1 ? 0 : opt.kNull * (opt.qPref[1] - q[1]);
+  const p2 = L === 2 ? 0 : opt.kNull * (opt.qPref[2] - q[2]);
+  const Jp = [J[0][0] * p0 + J[0][1] * p1 + J[0][2] * p2, J[1][0] * p0 + J[1][1] * p1 + J[1][2] * p2];
+  const z = solveSmall(A0, Jp);
+  dq[0] += p0 - wi0 * (J[0][0] * z[0] + J[1][0] * z[1]);
+  dq[1] += p1 - wi1 * (J[0][1] * z[0] + J[1][1] * z[1]);
+  dq[2] += p2 - wi2 * (J[0][2] * z[0] + J[1][2] * z[1]);
+  return dq;
+}
+
+/** 2×2・3×3 の連立一次方程式（部分ピボットのガウス消去）。特異なら 0 を返す */
+function solveSmall(A: number[][], b: Vec): Vec {
+  const n = A.length;
+  const M = A.map((r, i) => [...r, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    if (Math.abs(M[p][c]) < 1e-14) return new Array(n).fill(0);
+    if (p !== c) [M[c], M[p]] = [M[p], M[c]];
+    for (let r = c + 1; r < n; r++) {
+      const f = M[r][c] / M[c][c];
+      for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+    }
+  }
+  const x = new Array(n).fill(0);
+  for (let r = n - 1; r >= 0; r--) {
+    let s = M[r][n];
+    for (let k = r + 1; k < n; k++) s -= M[r][k] * x[k];
+    x[r] = s / M[r][r];
+  }
+  return x;
 }
 
 export function taskError(arm: ArmModel, q: Vec, target: Vec2, phiTarget?: number): Vec {
@@ -204,7 +231,7 @@ export function solveIK(
   target: Vec2,
   qInit: Vec,
   opt: IKOptions,
-  maxIter = 1000,
+  maxIter = 300,
   tol = 1e-6,
 ): { q: Vec; error: number; iterations: number } {
   let q = [...qInit];
