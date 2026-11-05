@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { WorkerRequest, WorkerResponse } from '../../core/worker';
 
-type Kind = 'trials' | 'validation';
+type Kind = 'trials' | 'validation' | 'l4protocol';
 type Resp<K extends Kind> = Extract<WorkerResponse, { type: K }>;
 type Req<K extends Kind> = Omit<Extract<WorkerRequest, { type: K }>, 'id' | 'type'>;
 
@@ -9,7 +9,7 @@ type Req<K extends Kind> = Omit<Extract<WorkerRequest, { type: K }>, 'id' | 'typ
 export function useWorkerJob<K extends Kind>(worker: Worker | null, type: K) {
   const [result, setResult] = useState<Resp<K> | null>(null);
   const [busy, setBusy] = useState(false);
-  const id = useRef(type === 'trials' ? 2_000_000 : 3_000_000);
+  const id = useRef(type === 'trials' ? 2_000_000 : type === 'validation' ? 3_000_000 : 4_000_000);
   useEffect(() => {
     if (!worker) return;
     const h = (ev: MessageEvent<WorkerResponse>) => {

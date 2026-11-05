@@ -89,7 +89,7 @@ export default function App() {
         <button className={tab === 'l4' ? 'on' : ''} onClick={() => setTab('l4')}>Level 4｜外部刺激と適応（スクワット）</button>
       </div>
       <div style={{ display: tab === 'l4' ? 'block' : 'none' }}>
-        <Level4View />
+        <Level4View worker={wk} />
       </div>
       {/* タブを切り替えても各画面の状態を保つため、非表示にするだけで描画は続ける */}
       <div style={{ display: tab === 'l3' ? 'block' : 'none' }}>

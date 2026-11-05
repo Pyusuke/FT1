@@ -4,7 +4,7 @@
 import type { Vec } from '../linalg';
 import { mulberry32 } from '../linalg';
 import { gaussian } from '../simulate';
-import { BodyModel, DEFAULT_BODY, V2, comJacobian } from './body';
+import { BodyModel, DEFAULT_BODY, V2, balanceMargin, comJacobian, forward } from './body';
 import { DEFAULT_MUSCLES, MuscleModel, cocontractionIndex, forceRatios, muscleForces } from './muscles';
 import { DEFAULT_TASK, SquatResult, SquatSettings, SquatTask, simulateSquat, squatMetrics } from './squat';
 import { Stimuli, applyBody, fatiguedFMaxExt, kneePerception, passiveStiffness, passiveTorque } from './stimuli';
@@ -89,6 +89,13 @@ export interface TrialMetrics {
   kneePerceivedBottom: number;
   /** 一番深いところでの重心の前後位置 [m] */
   comXBottom: number;
+  /** モデルが「感じていた」重心（感じた関節角から計算）の軌道の誤差 RMS [m]。学習に使える情報 */
+  comRmsPerceived: number;
+  /** モデルが感じていたバランスの余裕（最小）[m] */
+  balancePerceived: number;
+  /** 一番深いところでの実際の重心と、モデルが感じていた重心の位置 */
+  comBottom: V2;
+  comBottomPerceived: V2;
 }
 
 export function runTrial(inp: TrialInput): TrialOutput {
@@ -156,7 +163,16 @@ export function runTrial(inp: TrialInput): TrialOutput {
     qBottom: sim.q[kb],
     kneePerceivedBottom: sim.qPerceived[kb][1],
     comXBottom: sim.com[kb][0],
+    comRmsPerceived: 0,
+    balancePerceived: 0,
+    comBottom: sim.com[kb],
+    comBottomPerceived: forward(b, sim.qPerceived[kb]).com,
   };
+  {
+    const pc = sim.qPerceived.map((x) => forward(b, x).com);
+    metrics.comRmsPerceived = Math.sqrt(pc.reduce((a, c, k) => a + (c[0] - sim.target[k][0]) ** 2 + (c[1] - sim.target[k][1]) ** 2, 0) / pc.length);
+    metrics.balancePerceived = Math.min(...pc.map((c) => balanceMargin(b, c[0])));
+  }
 
   const costTerms = trialCostTerms(metrics, task);
   const failReasons: string[] = [];
@@ -183,13 +199,16 @@ export function runTrial(inp: TrialInput): TrialOutput {
 /** 成功の判定基準（結果だけ） */
 export const SUCCESS = { depth: 0.02 };
 
-/** コストの各項（0〜1 程度に正規化） */
-export function trialCostTerms(mt: TrialMetrics, task: SquatTask = DEFAULT_TASK): Record<keyof CostWeights, number> {
+/**
+ * コストの各項（0〜1 程度に正規化）。perceived = true なら、重心とバランスはモデルが感じていた値を使う
+ * （仮説2が学習に使えるのは、モデル自身が感じられる情報だけ）。
+ */
+export function trialCostTerms(mt: TrialMetrics, task: SquatTask = DEFAULT_TASK, perceived = false): Record<keyof CostWeights, number> {
   const sat = (x: number, ref: number) => Math.max(0, x) / (Math.max(0, x) + ref);
   return {
     muscle: sat(mt.muscleBurden, 0.15),
-    com: sat(mt.comRms, 0.005),
-    balance: Math.max(0, 0.03 - mt.balanceMargin) / 0.03,
+    com: sat(perceived ? mt.comRmsPerceived : mt.comRms, 0.005),
+    balance: Math.max(0, 0.03 - (perceived ? mt.balancePerceived : mt.balanceMargin)) / 0.03,
     rom: Math.max(0, 0.15 - mt.romMargin) / 0.15,
     time: Math.max(0, mt.time - task.duration) / task.duration,
   };

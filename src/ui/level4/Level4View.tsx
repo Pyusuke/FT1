@@ -3,6 +3,11 @@ import { Step1Model } from './Step1Model';
 import { Step2Stimuli } from './Step2Stimuli';
 import { NO_STIMULI, STIMULUS_DEFAULTS, Stimuli } from '../../core/level4/stimuli';
 import { CostWeights, DEFAULT_COST_WEIGHTS, DEFAULT_MOTOR, MotorSettings } from '../../core/level4/trial';
+import { HypothesisConfig, defaultHypothesis } from '../../core/level4/hypotheses';
+import { DEFAULT_COUNTS, PhaseId, ProtocolConfig } from '../../core/level4/protocol';
+import { Step3Hypothesis } from './Step3Hypothesis';
+import { Step4Protocol } from './Step4Protocol';
+import { useWorkerJob } from '../level3/useWorkerJob';
 
 export const L4_DISCLAIMER =
   '本機能は、制御の仮説ごとの予測を示す概念モデルです。人の身体、身体感覚、膝サポーターの効果、特定の研究結果を再現したものではありません。';
@@ -17,15 +22,26 @@ export const L4_STEPS: { title: string; lead: string }[] = [
   { title: '7. 3つの仮説を比べる', lead: '同じ刺激に対して、制御の仮説ごとに予測がどう違うかが分かります。' },
 ];
 
-export function Level4View() {
+export function Level4View({ worker }: { worker: Worker | null }) {
   const [step, setStep] = useState(0);
   const [stimuli, setStimuli] = useState<Stimuli>({ ...NO_STIMULI, kneeSpring: STIMULUS_DEFAULTS.kneeSpring });
   const [settings, setSettings] = useState<MotorSettings>(DEFAULT_MOTOR);
   const [costW, setCostW] = useState<CostWeights>(DEFAULT_COST_WEIGHTS);
+  const [hyp, setHyp] = useState<HypothesisConfig>(defaultHypothesis('H2'));
+  const [counts, setCounts] = useState<Record<PhaseId, number>>({ ...DEFAULT_COUNTS });
+  const [seed, setSeed] = useState(1);
+  const job = useWorkerJob(worker, 'l4protocol');
+  const config = (h: HypothesisConfig): ProtocolConfig => ({ counts, stimuli, hypothesis: h, costWeights: costW, baseSettings: settings, seed });
   let body: ReactNode;
   if (step === 0) body = <Step1Model />;
   else if (step === 1)
     body = <Step2Stimuli stimuli={stimuli} setStimuli={setStimuli} settings={settings} setSettings={setSettings} costW={costW} setCostW={setCostW} />;
+  else if (step === 2) body = <Step3Hypothesis h={hyp} set={setHyp} />;
+  else if (step === 3)
+    body = (
+      <Step4Protocol stimuli={stimuli} hypothesis={hyp} counts={counts} setCounts={setCounts} seed={seed} setSeed={setSeed}
+        result={job.result?.results[0] ?? null} busy={job.busy} run={() => job.run({ configs: [config(hyp)] })} />
+    );
   else body = <p className="muted">この手順は次のフェーズで実装します。</p>;
   return (
     <div>
