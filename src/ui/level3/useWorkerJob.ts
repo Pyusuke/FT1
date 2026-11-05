@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { WorkerRequest, WorkerResponse } from '../../core/worker';
 
-type Kind = 'trials' | 'validation' | 'l4protocol';
+type Kind = 'trials' | 'validation' | 'l4protocol' | 'l4subjects';
 type Resp<K extends Kind> = Extract<WorkerResponse, { type: K }>;
 type Req<K extends Kind> = Omit<Extract<WorkerRequest, { type: K }>, 'id' | 'type'>;
 

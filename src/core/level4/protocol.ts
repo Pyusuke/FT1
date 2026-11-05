@@ -1,7 +1,8 @@
 // Level 4：4つの期間のプロトコル（習得期 → 刺激期 → 解除期 → 再刺激期）を、選んだ仮説で一括実行する。
 // 失敗した試行も除外せず、すべて保存する。
 import type { Vec } from '../linalg';
-import type { V2 } from './body';
+import type { BodyModel, V2 } from './body';
+import type { MuscleModel } from './muscles';
 import {
   HypothesisConfig, H2State, H3State, SCALE, explorationNoise, h2Offset, initH2, initH3, settingsFromTheta, updateH2, updateH3,
 } from './hypotheses';
@@ -23,6 +24,9 @@ export interface ProtocolConfig {
   costWeights: CostWeights;
   /** 基準の動作の設定 */
   baseSettings: MotorSettings;
+  /** 体と筋（仮想の被験者ごとに変える。未指定なら既定のモデル） */
+  body?: BodyModel;
+  muscles?: MuscleModel;
   seed: number;
 }
 
@@ -95,20 +99,23 @@ export function runProtocol(cfg: ProtocolConfig): ProtocolResult {
       let xi: Vec = [];
       let learned: Vec = new Array(6).fill(0);
       let settings = cfg.baseSettings;
-      if (hyp.id === 'H2') {
+      const learnsSettings = hyp.id === 'H2' || hyp.id === 'H23';
+      const recalibrates = hyp.id === 'H3' || hyp.id === 'H23';
+      if (learnsSettings) {
         learned = h2Offset(h2, hyp.h2);
         xi = learned.map(() => explore());
         settings = settingsFromTheta(learned.map((d, i) => d + hyp.h2.explore * SCALE[i] * xi[i]), cfg.baseSettings);
       }
       const out = runTrial({
         settings, stimuli: stim, seed: cfg.seed * 100003 + index, fatigueTrials,
-        perceptionCorrection: hyp.id === 'H3' ? h3.correction : 0,
+        perceptionCorrection: recalibrates ? h3.correction : 0,
+        body: cfg.body, muscles: cfg.muscles,
       });
       const cost = costOf(out.costTerms, cfg.costWeights);
       const costPerceived = costOf(trialCostTerms(out.metrics, undefined, true), cfg.costWeights);
-      if (hyp.id === 'H2') h2 = updateH2(h2, hyp.h2, xi, costPerceived);
+      if (learnsSettings) h2 = updateH2(h2, hyp.h2, xi, costPerceived);
       const corrUsed = h3.correction;
-      if (hyp.id === 'H3') h3 = updateH3(h3, hyp.h3, out, refNoise);
+      if (recalibrates) h3 = updateH3(h3, hyp.h3, out, refNoise, cfg.body);
       if (!samples) {
         samples = out.sim.q.length;
         target = out.sim.target;

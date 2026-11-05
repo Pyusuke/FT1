@@ -11,20 +11,23 @@ import { select } from './experiment';
 import { TrialSet, TrialSettings, generateTrials } from './level3/trials';
 import { ValidationKind, generateValidation } from './level3/validation';
 import { ProtocolConfig, ProtocolResult, runProtocol } from './level4/protocol';
+import { SubjectResult, SubjectStudyConfig, runSubjects } from './level4/subjects';
 
 export type WorkerRequest =
   | { type: 'experiment'; id: number; ms: MotionUIState; conditions: Conditions }
   | { type: 'skills'; id: number; cards: SkillId[]; lowFriction: boolean }
   | { type: 'trials'; id: number; ms: MotionUIState; weights: Weights; settings: TrialSettings }
   | { type: 'validation'; id: number; ms: MotionUIState; kind: ValidationKind; count: number; seed: number }
-  | { type: 'l4protocol'; id: number; configs: ProtocolConfig[] };
+  | { type: 'l4protocol'; id: number; configs: ProtocolConfig[] }
+  | { type: 'l4subjects'; id: number; config: SubjectStudyConfig };
 
 export type WorkerResponse =
   | { type: 'experiment'; id: number; base: Experiment; cond: Experiment | null; ms: number }
   | { type: 'skills'; id: number; result: SkillComparison; ms: number }
   | { type: 'trials'; id: number; set: TrialSet; ms: number }
   | { type: 'validation'; id: number; set: TrialSet; ms: number }
-  | { type: 'l4protocol'; id: number; results: ProtocolResult[]; ms: number };
+  | { type: 'l4protocol'; id: number; results: ProtocolResult[]; ms: number }
+  | { type: 'l4subjects'; id: number; results: SubjectResult[]; config: SubjectStudyConfig; ms: number };
 
 let cacheKey = '';
 let cacheBase: Experiment | null = null;
@@ -68,6 +71,9 @@ self.onmessage = (ev: MessageEvent<WorkerRequest>) => {
       eSpec: select(base, req.weights).opt.spec, weights: req.weights, refs: base.refs,
     });
     post({ type: 'trials', id: req.id, set, ms: performance.now() - t0 });
+  } else if (req.type === 'l4subjects') {
+    const out = runSubjects(req.config);
+    post({ type: 'l4subjects', id: req.id, results: out.results, config: req.config, ms: performance.now() - t0 });
   } else if (req.type === 'l4protocol') {
     const results = req.configs.map(runProtocol);
     post({ type: 'l4protocol', id: req.id, results, ms: performance.now() - t0 });

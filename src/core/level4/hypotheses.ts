@@ -15,12 +15,14 @@ import { gaussian } from '../simulate';
 import { DEFAULT_MOTOR, MotorSettings, TrialOutput } from './trial';
 import { BodyModel, DEFAULT_BODY, comJacobian } from './body';
 
-export type HypothesisId = 'H1' | 'H2' | 'H3';
+/** H23：仮説2と仮説3を両方持つ制御（Phase 5 の仮想の被験者でのみ使う） */
+export type HypothesisId = 'H1' | 'H2' | 'H3' | 'H23';
 
 export const HYPOTHESIS_LABELS: Record<HypothesisId, { name: string; short: string; desc: string }> = {
   H1: { name: '仮説1：誤差だけを直す制御（記憶なし）', short: '仮説1 記憶なし', desc: '試行の中で、感じた重心の誤差だけをその場で直す。試行をまたいだ学習はしない。' },
   H2: { name: '仮説2：経験をもとに少しずつ最適化し直す（記憶あり）', short: '仮説2 記憶あり', desc: '関節の配分の好み・体幹の前傾の好み・同時収縮の大きさを、試行ごとに少しずつ更新する。' },
   H3: { name: '仮説3：感覚の基準そのものを補正する', short: '仮説3 感覚の補正', desc: '膝角度の知覚のずれを推定する内部の値を持ち、外部の基準を使って試行ごとに更新する。' },
+  H23: { name: '仮説2＋3（仮想の被験者用）', short: '仮説2＋3', desc: '動作の設定の更新（仮説2）と、感覚の基準の補正（仮説3）を両方持つ。外部の基準への頼り方で、仮説3の強さが変わる。' },
 };
 
 export interface H2Params {
@@ -41,6 +43,8 @@ export interface H3Params {
   learningRate: number;
   /** 外部の基準（視覚による重心の位置）を使えるか */
   externalReference: boolean;
+  /** 外部の基準への頼り方（0〜1。学習率に掛かる。既定 1） */
+  reliance?: number;
   /** 外部の基準の測定ノイズ [m] */
   referenceNoise: number;
 }
@@ -122,7 +126,7 @@ export function updateH3(s: H3State, p: H3Params, t: TrialOutput, noise: () => n
   const J = comJacobian(body, t.sim.qPerceived[kb]);
   const jk = [J[0][1], J[1][1]];
   const e = -(jk[0] * d[0] + jk[1] * d[1]) / (jk[0] * jk[0] + jk[1] * jk[1]);
-  return { correction: s.correction + p.learningRate * e };
+  return { correction: s.correction + p.learningRate * (p.reliance ?? 1) * e };
 }
 
 export const explorationNoise = (seed: number) => gaussian(mulberry32(seed), 1);

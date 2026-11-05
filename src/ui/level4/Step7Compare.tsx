@@ -7,7 +7,7 @@ import { STIMULUS_LABELS, Stimuli, anyStimulus } from '../../core/level4/stimuli
 import { Slider } from '../common';
 import { PhaseChart } from './PhaseChart';
 
-const COLORS: Record<HypothesisId, string> = { H1: '#8a93a3', H2: '#2a62c9', H3: '#c0392b' };
+const COLORS: Record<HypothesisId, string> = { H1: '#8a93a3', H2: '#2a62c9', H3: '#c0392b', H23: '#7a4cc2' };
 const fmt = (x: number) => (Math.abs(x) >= 100 ? x.toFixed(0) : Math.abs(x) >= 10 ? x.toFixed(1) : x.toFixed(2));
 
 export function Step7Compare({ stimuli, results, busy, run, ds }: { stimuli: Stimuli; results: ProtocolResult[] | null; busy: boolean; run: () => void; ds: DetectionSettings }) {

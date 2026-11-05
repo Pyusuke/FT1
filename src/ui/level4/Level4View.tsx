@@ -11,6 +11,7 @@ import { useWorkerJob } from '../level3/useWorkerJob';
 import { Step5Curves } from './Step5Curves';
 import { Step6Observers } from './Step6Observers';
 import { Step7Compare } from './Step7Compare';
+import { Step8Subjects } from './Step8Subjects';
 import { DEFAULT_DETECTION, DetectionSettings } from '../../core/level4/observers';
 
 export const L4_DISCLAIMER =
@@ -24,6 +25,7 @@ export const L4_STEPS: { title: string; lead: string }[] = [
   { title: '5. 学習曲線と後効果を見る', lead: 'この仮説のもとで、試行を重ねると動きがどう変わり、刺激を外した後に何が残るかが分かります。' },
   { title: '6. 観測者ごとの見え方を見る', lead: '同じ変化が、目視・動きの計測・内部の計測のどれなら検出できるかが分かります。' },
   { title: '7. 3つの仮説を比べる', lead: '同じ刺激に対して、制御の仮説ごとに予測がどう違うかが分かります。' },
+  { title: '8. 仮想の被験者（任意）', lead: '体格・筋力・学習の速さ・外部の基準への頼り方が違う被験者で、刺激への反応がいくつのタイプに分かれるかが分かります。' },
 ];
 
 export function Level4View({ worker }: { worker: Worker | null }) {
@@ -36,6 +38,7 @@ export function Level4View({ worker }: { worker: Worker | null }) {
   const [seed, setSeed] = useState(1);
   const job = useWorkerJob(worker, 'l4protocol', 4_000_000);
   const cmp = useWorkerJob(worker, 'l4protocol', 5_000_000);
+  const subj = useWorkerJob(worker, 'l4subjects', 6_000_000);
   const [ds, setDs] = useState<DetectionSettings>(DEFAULT_DETECTION);
   const config = (h: HypothesisConfig): ProtocolConfig => ({ counts, stimuli, hypothesis: h, costWeights: costW, baseSettings: settings, seed });
   let body: ReactNode;
@@ -55,6 +58,9 @@ export function Level4View({ worker }: { worker: Worker | null }) {
       <Step7Compare stimuli={stimuli} results={cmp.result?.results ?? null} busy={cmp.busy} ds={ds}
         run={() => cmp.run({ configs: (['H1', 'H2', 'H3'] as const).map((id) => config({ ...hyp, id })) })} />
     );
+  else if (step === 7)
+    body = <Step8Subjects stimuli={stimuli} counts={counts} costW={costW} busy={subj.busy} run={(c) => subj.run({ config: c })}
+      results={subj.result ? { results: subj.result.results, config: subj.result.config, ms: subj.result.ms } : null} />;
   else body = <p className="muted">この手順は次のフェーズで実装します。</p>;
   return (
     <div>
