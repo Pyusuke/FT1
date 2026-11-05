@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { analyzeSet, interpretR } from '../../core/level3/ucm';
 import { RTimeChart, RVerdictBox, VarianceBars } from './Step3Decompose';
+import { analyzeVariables } from '../../core/level3/invariants';
+import { VariableTable } from './Step4Variables';
 import { VALIDATION_CASES, ValidationKind } from '../../core/level3/validation';
 import type { MotionUIState } from '../motionState';
 import { TrialOverview } from './TrialOverview';
@@ -21,6 +23,13 @@ export function ValidationMode({ worker, ms }: { worker: Worker | null; ms: Moti
   const verdict = ucm ? interpretR(ucm.Rmean) : 'unknown';
   const expected = shownTruth.expectR === '>1' ? 'protected' : shownTruth.expectR === '<1' ? 'fixed' : shownTruth.expectR === '≈1' ? 'neutral' : null;
   const correct = expected === null ? null : verdict === expected;
+  const vars = useMemo(() => (set ? analyzeVariables(set) : []), [set]);
+  const jointVerdict = (j: number) => vars.find((v) => v.id === `q${j + 1}`)?.verdict;
+  const varChecks = [
+    ...shownTruth.protectedJoints.map((j) => ({ j, want: 'protected' as const, got: jointVerdict(j) })),
+    ...shownTruth.freeJoints.map((j) => ({ j, want: 'free' as const, got: jointVerdict(j) })),
+  ];
+  const varCorrect = varChecks.length ? varChecks.every((c) => c.got === c.want) : null;
   return (
     <div className="panel validation">
       <div className="warning" style={{ fontWeight: 700, fontSize: 14 }}>{VALIDATION_NOTICE}</div>
@@ -50,7 +59,14 @@ export function ValidationMode({ worker, ms }: { worker: Worker | null; ms: Moti
                 {correct === null ? <span className="muted">このデータでは R を判定に使いません</span>
                   : <b className={correct ? 'up' : 'down'}>{correct ? '✓ 正しく判定できた' : '✗ 判定が正解と一致しない'}</b>}
               </td></tr>
-              <tr><td>守られている変数の判定</td><td className="muted">Phase 4（変数の候補）を実装した後に、ここへ表示します。</td></tr>
+              <tr><td>守られている変数の判定</td><td>
+                {varCorrect === null ? <span className="muted">このデータでは関節ごとの判定を確かめません</span> : (
+                  <>
+                    <b className={varCorrect ? 'up' : 'down'}>{varCorrect ? '✓ 正しく判定できた' : '✗ 判定が正解と一致しない'}</b>
+                    <span className="small">（{varChecks.map((c) => `${['肩', '肘', '手首'][c.j]}：正解「${c.want === 'protected' ? '守られている' : '自由'}」→ 判定「${c.got === 'protected' ? '守られている可能性' : c.got === 'free' ? '自由な可能性' : '不明'}」`).join('、')}）</span>
+                  </>
+                )}
+              </td></tr>
             </tbody>
           </table>
           <RVerdictBox r={ucm} />
@@ -60,6 +76,10 @@ export function ValidationMode({ worker, ms }: { worker: Worker | null; ms: Moti
               <div><h3>2つの成分の分散</h3><VarianceBars r={ucm} /></div>
             </div>
           )}
+          <details>
+            <summary className="small">変数ごとの判定を表示</summary>
+            <VariableTable rows={vars} showFail={false} />
+          </details>
           <TrialOverview set={set} height={320} />
         </>
       )}

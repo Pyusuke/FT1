@@ -11,7 +11,7 @@ import { buildMotion, initialMotionState } from '../../src/ui/motionState';
 /** 1時刻だけの試行を作る（分解の単体テスト用） */
 const mk = (qs: number[][]): Trial[] => qs.map((q, id) => ({
   id, cond: { strategy: 'D', payload: 0, elbowLimited: false, disturbance: null, noiseSigma: 0, initialOffset: [0, 0, 0] },
-  q: new Float32Array(q), tip: new Float32Array(2), tau: new Float32Array(3), phi: new Float32Array(1), T: 1,
+  q: new Float32Array(q), tip: new Float32Array(2), tau: new Float32Array(3), phi: new Float32Array(1), force: new Float32Array(1), T: 1,
   metrics: { time: 0, energy: 0, accuracy: 0, load: 0, smoothness: 0, margin: 0 }, cost: 0, alloc: [0, 0, 0], torqueShare: [0, 0, 0],
   success: true, failReasons: [],
 }));

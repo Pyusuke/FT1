@@ -102,7 +102,7 @@ export function generateValidation(kind: ValidationKind, arm: ArmModel, motion: 
     trials.push({
       id,
       cond: { strategy: 'D', payload: 0, elbowLimited: false, disturbance: null, noiseSigma: 0, initialOffset: [0, 0, 0] },
-      q, tip, tau: new Float32Array(n * 3), phi, T: 1,
+      q, tip, tau: new Float32Array(n * 3), phi, force: new Float32Array(n), T: 1,
       metrics: { time: NaN, energy: NaN, accuracy: NaN, load: NaN, smoothness: NaN, margin: NaN },
       cost: NaN, alloc: [NaN, NaN, NaN], torqueShare: [NaN, NaN, NaN],
       success: true, failReasons: [],

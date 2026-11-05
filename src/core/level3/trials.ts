@@ -95,6 +95,8 @@ export interface Trial {
   tau: Float32Array;
   /** 手先の向き φ（サンプル数） */
   phi: Float32Array;
+  /** 接触力の大きさ [N]（サンプル数。面のない動作では 0） */
+  force: Float32Array;
   T: number;
   metrics: Record<TrialMetricKey, number>;
   /** 6指標の正規化値を、Level 3A の重み（頑健性を除き合計 1 に割り戻し）で足したもの */
@@ -196,7 +198,7 @@ export function runTrial(id: number, c: TrialCondition, ctx: TrialContext, task:
 
 function packTrial(id: number, c: TrialCondition, arm: ArmModel, sim: SimResult, ctx: TrialContext): Trial {
   const n = sim.q.length;
-  const q = new Float32Array(n * 3), tip = new Float32Array(n * 2), tau = new Float32Array(n * 3), phi = new Float32Array(n);
+  const q = new Float32Array(n * 3), tip = new Float32Array(n * 2), tau = new Float32Array(n * 3), phi = new Float32Array(n), force = new Float32Array(n);
   const tq = [0, 0, 0];
   const dt = sim.T / (n - 1);
   for (let k = 0; k < n; k++) {
@@ -208,6 +210,7 @@ function packTrial(id: number, c: TrialCondition, arm: ArmModel, sim: SimResult,
     tip[k * 2] = sim.tip[k][0];
     tip[k * 2 + 1] = sim.tip[k][1];
     phi[k] = sim.phi[k];
+    force[k] = Math.hypot(sim.contactForce[k][0], sim.contactForce[k][1]);
   }
   const raw = rawMetrics(arm, sim, 0);
   const norm = normalize(raw, ctx.refs);
@@ -228,7 +231,7 @@ function packTrial(id: number, c: TrialCondition, arm: ArmModel, sim: SimResult,
   if (over > 1) failReasons.push(`トルク上限の超過（${(over * 100).toFixed(0)}%）`);
 
   return {
-    id, cond: c, q, tip, tau, phi, T: sim.T, metrics, cost,
+    id, cond: c, q, tip, tau, phi, force, T: sim.T, metrics, cost,
     alloc: jointAllocation(arm, sim),
     torqueShare: tq.map((x) => x / tqs),
     success: failReasons.length === 0,

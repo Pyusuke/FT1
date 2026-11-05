@@ -7,6 +7,8 @@ import type { MotionUIState } from '../motionState';
 import { Step1Objective } from './Step1Objective';
 import { Step2Trials } from './Step2Trials';
 import { Step3Decompose } from './Step3Decompose';
+import { Step4Variables } from './Step4Variables';
+import { Step5Clusters } from './Step5Clusters';
 import { ValidationMode } from './ValidationMode';
 import { useWorkerJob } from './useWorkerJob';
 
@@ -50,7 +52,8 @@ export function Level3View({ base, applyToLevel2, worker, ms }: Level3Props) {
         generate={() => trials.run({ ms, weights, settings })} />
     );
   else if (step === 2) body = <Step3Decompose set={trials.result?.set ?? null} />;
-  else body = <p className="muted">この手順は次のフェーズで実装します。</p>;
+  else if (step === 3) body = <Step4Variables set={trials.result?.set ?? null} />;
+  else body = <Step5Clusters set={trials.result?.set ?? null} />;
 
   return (
     <div>
