@@ -12,6 +12,7 @@ import { CostPanel } from './ui/CostPanel';
 import { Row, StrategyTable, rawTable } from './ui/StrategyTable';
 import { ParetoPlot } from './ui/ParetoPlot';
 import { ConditionPanel } from './ui/ConditionPanel';
+import { SkillCards } from './ui/SkillCards';
 import { InfoButton, STRATEGY_COLORS, Warnings } from './ui/common';
 import { buildMotion, initialMotionState } from './ui/motionState';
 
@@ -34,6 +35,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
 
   const worker = useRef<Worker | null>(null);
+  const [wk, setWk] = useState<Worker | null>(null);
   const reqId = useRef(0);
   useEffect(() => {
     const wk = new Worker(new URL('./core/worker.ts', import.meta.url), { type: 'module' });
@@ -44,6 +46,7 @@ export default function App() {
       }
     };
     worker.current = wk;
+    setWk(wk);
     return () => wk.terminate();
   }, []);
   useEffect(() => {
@@ -107,6 +110,9 @@ export default function App() {
       <div className="panel full">
         <ConditionPanel c={conditions} set={setConditions} base={res?.base ?? null} cond={res?.cond ?? null} w={w}
           sel={sel} setSel={setSel} contact={contact} target={target} />
+      </div>
+      <div className="panel full">
+        <SkillCards worker={wk} />
       </div>
     </div>
   );
