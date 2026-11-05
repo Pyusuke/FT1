@@ -17,6 +17,14 @@
 
 **https://ft-1-six.vercel.app/** をブラウザで開くだけで使えます（インストール不要。計算はすべてブラウザ内で行います）。
 
+画面は3つのタブに分かれています。
+
+| タブ | 内容 | ガイド | 分かったこと |
+| --- | --- | --- | --- |
+| Level 1・2｜動作合成・コスト最適化 | 腕のアームで、動作の合成・冗長性・コストによる選択・外部条件・運動知カード | [manual.md](docs/manual.md) | [findings.md](docs/findings.md) |
+| Level 3｜戦略発見 | 多数の試行から、守られている量・自由に使われている量をデータで見分ける | [level3-guide.md](docs/level3-guide.md) | [findings-level3.md](docs/findings-level3.md) |
+| Level 4｜外部刺激と適応（スクワット） | 脚のモデルに膝への刺激をかけ、制御の仮説ごとに適応・後効果・観測者ごとの見え方を予測する | [level4-guide.md](docs/level4-guide.md) | [findings-level4.md](docs/findings-level4.md) |
+
 はじめて使う方は、まず [使い方ガイド（docs/manual.md）](docs/manual.md) を読んでください（印刷・配布用の [PDF 版](docs/manual.pdf) もあります）。画面の見方と、5つの仮説を確かめる手順を画像付きで説明しています。
 
 ## 自分のパソコンで動かす（開発者向け）
