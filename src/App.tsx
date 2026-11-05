@@ -3,7 +3,7 @@ import { compileMotion, findContact } from './core/composition';
 import { DEFAULT_ARM } from './core/kinematics';
 import { PRESETS, Weights } from './core/cost';
 import { Experiment, select } from './core/experiment';
-import { Conditions, NO_CONDITIONS } from './core/conditions';
+import { Conditions, NO_CONDITIONS, anyCondition } from './core/conditions';
 import type { WorkerRequest, WorkerResponse } from './core/worker';
 import { ArmCanvas } from './ui/ArmCanvas';
 import { PrimitivePanel } from './ui/PrimitivePanel';
@@ -11,6 +11,7 @@ import { JointPlots } from './ui/JointPlots';
 import { CostPanel } from './ui/CostPanel';
 import { Row, StrategyTable, rawTable } from './ui/StrategyTable';
 import { ParetoPlot } from './ui/ParetoPlot';
+import { ConditionPanel } from './ui/ConditionPanel';
 import { InfoButton, STRATEGY_COLORS, Warnings } from './ui/common';
 import { buildMotion, initialMotionState } from './ui/motionState';
 
@@ -28,7 +29,7 @@ export default function App() {
   const [w, setW] = useState<Weights>({ ...PRESETS[4].w });
   const [sel, setSel] = useState('E');
   const [overlay, setOverlay] = useState(false);
-  const [conditions] = useState<Conditions>(NO_CONDITIONS);
+  const [conditions, setConditions] = useState<Conditions>(NO_CONDITIONS);
   const [res, setRes] = useState<{ base: Experiment; cond: Experiment | null; ms: number } | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -79,6 +80,7 @@ export default function App() {
       <div className="grid-top">
         <div className="panel"><PrimitivePanel s={ms} set={setMs} /></div>
         <div className="panel">
+          {anyCondition(conditions) && <div className="warning">条件適用中：表・アーム・グラフは条件下の結果です（比較は下段）。</div>}
           <div className="btns">
             <button className={overlay ? 'on' : ''} onClick={() => setOverlay((o) => !o)}>戦略を重ねて再生 Overlay（A〜E）</button>
             {!overlay && cur && <span className="muted">再生中：<b style={{ color: cur.color }}>{cur.label}</b>（下の表の行をクリックで切替）</span>}
@@ -101,6 +103,10 @@ export default function App() {
           )}
           {view && <ParetoPlot pool={view.pool} rows={rows} />}
         </div>
+      </div>
+      <div className="panel full">
+        <ConditionPanel c={conditions} set={setConditions} base={res?.base ?? null} cond={res?.cond ?? null} w={w}
+          sel={sel} setSel={setSel} contact={contact} target={target} />
       </div>
     </div>
   );
