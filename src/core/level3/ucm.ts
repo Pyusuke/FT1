@@ -32,21 +32,33 @@ export const DIM_TASK = 2;
 const EPS = 1e-14;
 
 export function decompose(arm: ArmModel, trials: Trial[], samples: number): UcmResult | null {
-  const N = trials.length;
+  return decomposeGeneric(
+    trials.length, samples,
+    (j, k) => [trials[j].q[k * 3], trials[j].q[k * 3 + 1], trials[j].q[k * 3 + 2]],
+    (q) => jacobian(arm, q),
+  );
+}
+
+/**
+ * ばらつきの分解の本体（3関節・2次元の結果）。Level 3（腕の手先）と Level 4（脚の重心）で共通に使う。
+ * getQ(j, k)：試行 j の時刻 k の関節角、jac(q)：結果（手先・重心）の 2×3 ヤコビアン
+ */
+export function decomposeGeneric(N: number, samples: number, getQ: (j: number, k: number) => Vec, jac: (q: Vec) => number[][]): UcmResult | null {
   if (N < 3) return null;
   const t: number[] = [], vFree: number[] = [], vTask: number[] = [], R: number[] = [];
   let sf = 0, st = 0;
   for (let k = 0; k < samples; k++) {
     // (1) 平均姿勢
     const mean = [0, 0, 0];
-    for (const tr of trials) for (let i = 0; i < 3; i++) mean[i] += tr.q[k * 3 + i];
+    for (let j = 0; j < N; j++) { const q = getQ(j, k); for (let i = 0; i < 3; i++) mean[i] += q[i]; }
     for (let i = 0; i < 3; i++) mean[i] /= N;
     // (2) 平均姿勢でのヤコビアンと、そのヌル空間の単位ベクトル
-    const nv = nullVector(jacobian(arm, mean));
+    const nv = nullVector(jac(mean));
     // (3) ずれをヌル空間成分と残りに分ける
     let ssFree = 0, ssTask = 0;
-    for (const tr of trials) {
-      const d: Vec = [tr.q[k * 3] - mean[0], tr.q[k * 3 + 1] - mean[1], tr.q[k * 3 + 2] - mean[2]];
+    for (let j = 0; j < N; j++) {
+      const q = getQ(j, k);
+      const d: Vec = [q[0] - mean[0], q[1] - mean[1], q[2] - mean[2]];
       const p = d[0] * nv[0] + d[1] * nv[1] + d[2] * nv[2];
       const total = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
       ssFree += p * p;
