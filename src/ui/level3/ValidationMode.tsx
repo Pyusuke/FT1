@@ -1,4 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { analyzeSet, interpretR } from '../../core/level3/ucm';
+import { RTimeChart, RVerdictBox, VarianceBars } from './Step3Decompose';
 import { VALIDATION_CASES, ValidationKind } from '../../core/level3/validation';
 import type { MotionUIState } from '../motionState';
 import { TrialOverview } from './TrialOverview';
@@ -15,6 +17,10 @@ export function ValidationMode({ worker, ms }: { worker: Worker | null; ms: Moti
   const truth = VALIDATION_CASES.find((c) => c.kind === kind)!;
   const set = job.result?.set ?? null;
   const shownTruth = VALIDATION_CASES.find((c) => c.kind === ranKind)!;
+  const ucm = useMemo(() => (set ? analyzeSet(set).byGroup.get('all') ?? null : null), [set]);
+  const verdict = ucm ? interpretR(ucm.Rmean) : 'unknown';
+  const expected = shownTruth.expectR === '>1' ? 'protected' : shownTruth.expectR === '<1' ? 'fixed' : shownTruth.expectR === '≈1' ? 'neutral' : null;
+  const correct = expected === null ? null : verdict === expected;
   return (
     <div className="panel validation">
       <div className="warning" style={{ fontWeight: 700, fontSize: 14 }}>{VALIDATION_NOTICE}</div>
@@ -40,9 +46,20 @@ export function ValidationMode({ worker, ms }: { worker: Worker | null; ms: Moti
               <tr><td>ばらつきの比 R の期待</td><td><b>{shownTruth.expectR === '>1' ? 'R > 1（手先は守られ、関節は自由）' : shownTruth.expectR === '<1' ? 'R < 1（関節の使い方が固定）' : shownTruth.expectR === '≈1' ? 'R ≈ 1（守られている様子はない）' : '（このデータでは R を判定に使わない。守られている変数の判定で確かめる）'}</b></td></tr>
               <tr><td>守られているはずの関節</td><td>{shownTruth.protectedJoints.length ? shownTruth.protectedJoints.map((j) => ['肩', '肘', '手首'][j]).join('・') : '（指定なし）'}</td></tr>
               <tr><td>自由なはずの関節</td><td>{shownTruth.freeJoints.length ? shownTruth.freeJoints.map((j) => ['肩', '肘', '手首'][j]).join('・') : '（指定なし）'}</td></tr>
-              <tr><td>分析による判定と正誤</td><td className="muted">ばらつきの分解（Phase 3）と変数の候補（Phase 4）を実装した後に、ここへ表示します。</td></tr>
+              <tr><td>ばらつきの分解（R）による判定</td><td>
+                {correct === null ? <span className="muted">このデータでは R を判定に使いません</span>
+                  : <b className={correct ? 'up' : 'down'}>{correct ? '✓ 正しく判定できた' : '✗ 判定が正解と一致しない'}</b>}
+              </td></tr>
+              <tr><td>守られている変数の判定</td><td className="muted">Phase 4（変数の候補）を実装した後に、ここへ表示します。</td></tr>
             </tbody>
           </table>
+          <RVerdictBox r={ucm} />
+          {ucm && (
+            <div className="two">
+              <div><h3>R の時間変化</h3><RTimeChart results={[{ label: 'R', r: ucm, color: '#2a62c9' }]} height={200} /></div>
+              <div><h3>2つの成分の分散</h3><VarianceBars r={ucm} /></div>
+            </div>
+          )}
           <TrialOverview set={set} height={320} />
         </>
       )}

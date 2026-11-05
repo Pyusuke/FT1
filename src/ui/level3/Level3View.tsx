@@ -6,6 +6,7 @@ import { DEFAULT_TRIAL_SETTINGS, TrialSettings } from '../../core/level3/trials'
 import type { MotionUIState } from '../motionState';
 import { Step1Objective } from './Step1Objective';
 import { Step2Trials } from './Step2Trials';
+import { Step3Decompose } from './Step3Decompose';
 import { ValidationMode } from './ValidationMode';
 import { useWorkerJob } from './useWorkerJob';
 
@@ -48,6 +49,7 @@ export function Level3View({ base, applyToLevel2, worker, ms }: Level3Props) {
         set={trials.result?.set ?? null} busy={trials.busy} elapsedMs={trials.result?.ms ?? null}
         generate={() => trials.run({ ms, weights, settings })} />
     );
+  else if (step === 2) body = <Step3Decompose set={trials.result?.set ?? null} />;
   else body = <p className="muted">この手順は次のフェーズで実装します。</p>;
 
   return (
