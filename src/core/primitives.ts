@@ -94,7 +94,7 @@ export const PRIMITIVE_LABELS: Record<PrimitiveParams['kind'], string> = {
 export function defaultPrimitive(kind: PrimitiveParams['kind']): PrimitiveParams {
   switch (kind) {
     case 'reach':
-      return { kind, start: [0.3, 0.3], goal: [0.68, 0.05] };
+      return { kind, start: [0.42, 0.38], goal: [0.72, 0.02] };
     case 'wave':
       return { kind, center: [0.55, 0.15], direction: Math.PI / 4, amplitude: 0.04, frequency: 3, envelope: true };
     case 'circle':

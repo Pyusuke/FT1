@@ -71,6 +71,7 @@ export interface SimResult {
 }
 
 export const DEFAULT_N = 241;
+const NULL_ITERS = 4;
 
 export function simulate(arm: ArmModel, motion: MotionFn, strat: StrategyParams, opts: SimOptions = {}): SimResult {
   const n = opts.n ?? DEFAULT_N;
@@ -84,24 +85,39 @@ export function simulate(arm: ArmModel, motion: MotionFn, strat: StrategyParams,
   const ikOpt = (x: number): IKOptions => ({ w: wAt(x), qPref: strat.qPref, kNull: strat.kNull, lambda, phiTarget: phiAt(x) });
 
   // 初期姿勢：好みの姿勢から出発し、ヌル空間項も収束させる
-  const q0 = opts.qInit ?? solveIK(arm, target[0], strat.qPref, { ...ikOpt(0), kNull: 0.3 }).q;
+  const q0 = opts.qInit ?? solveIK(arm, target[0], strat.qPref, { ...ikOpt(0), kNull: 0.1 }).q;
   const q: Vec[] = [q0];
   const Kinv = arm.stiffness.map((k) => 1 / k);
   const dist = opts.disturbance;
+
+  // 収束モードの1サンプル分の更新（タスク項＋ヌル空間項を固定回数、その後タスク項のみで仕上げ）
+  const convergedUpdate = (qStart: Vec, tg: Vec2, o: IKOptions): Vec => {
+    let qk = [...qStart];
+    for (let it = 0; it < NULL_ITERS; it++) {
+      const e = taskError(arm, qk, tg, o.phiTarget);
+      let dq = ikStep(arm, qk, e, o, true);
+      const mx = Math.max(...dq.map(Math.abs));
+      if (mx > 0.05) dq = dq.map((x) => (x * 0.05) / mx);
+      qk = qk.map((x, i) => x + dq[i]);
+    }
+    for (let it = 0; it < 60; it++) {
+      const e2 = taskError(arm, qk, tg, o.phiTarget);
+      if (Math.hypot(e2[0], e2[1]) < 1e-7 && (e2.length < 3 || Math.abs(e2[2]) < 1e-6)) break;
+      const d2 = ikStep(arm, qk, e2, o, false);
+      qk = qk.map((x, i) => x + d2[i]);
+    }
+    return qk;
+  };
+  if (!opts.qInit && mode === 'converged') {
+    // 予備反復：開始点で追従時と同じ更新を繰り返し、t=0 で定常な姿勢から始める（初期の跳びを防ぐ）
+    for (let it = 0; it < 150; it++) q[0] = convergedUpdate(q[0], target[0], ikOpt(0));
+  }
 
   for (let k = 1; k < n; k++) {
     let qk = [...q[k - 1]];
     const o = ikOpt(t[k]);
     if (mode === 'converged') {
-      const e = taskError(arm, qk, target[k], o.phiTarget);
-      const dq = ikStep(arm, qk, e, o, true);
-      qk = qk.map((x, i) => x + dq[i]);
-      for (let it = 0; it < 60; it++) {
-        const e2 = taskError(arm, qk, target[k], o.phiTarget);
-        if (Math.hypot(e2[0], e2[1]) < 1e-7 && (e2.length < 3 || Math.abs(e2[2]) < 1e-6)) break;
-        const d2 = ikStep(arm, qk, e2, o, false);
-        qk = qk.map((x, i) => x + d2[i]);
-      }
+      qk = convergedUpdate(qk, target[k], o);
     } else {
       // フィードフォワード（目標の差分）＋ フィードバック（ゲイン g）
       const f = fk(arm, qk);
@@ -231,10 +247,13 @@ function collectWarnings(
   return w;
 }
 
-/** 関節配分：各関節の移動量 ∫|q̇_i| の割合 */
-export function jointAllocation(r: SimResult): Vec {
+/** 関節配分：各関節が手先の動きに寄与した量 ∫|J_i q̇_i| dt の割合（J_i はヤコビアンの第 i 列） */
+export function jointAllocation(arm: ArmModel, r: SimResult): Vec {
   const s = [0, 0, 0];
-  for (let k = 1; k < r.q.length; k++) for (let i = 0; i < 3; i++) s[i] += Math.abs(r.q[k][i] - r.q[k - 1][i]);
+  for (let k = 1; k < r.q.length; k++) {
+    const J = jacobian(arm, r.q[k]);
+    for (let i = 0; i < 3; i++) s[i] += Math.hypot(J[0][i], J[1][i]) * Math.abs(r.q[k][i] - r.q[k - 1][i]);
+  }
   const tot = s[0] + s[1] + s[2] || 1;
   return s.map((x) => x / tot);
 }

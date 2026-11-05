@@ -138,22 +138,26 @@ export interface IKOptions {
   phiTarget?: number;
 }
 
-/** 可動範囲の端に近づく方向に動こうとしている関節の重みを大きくする（黙ってクランプはしない）。 */
-export function limitAwareWeights(arm: ArmModel, q: Vec, w: Vec, dqTrial: Vec | null): Vec {
-  const margin = 0.15; // rad
+/**
+ * 可動範囲の端に近い関節の重みを大きくして動きを抑える（黙ってクランプはしない）。
+ * 重みは位置だけで決める（方向で切り替えるとチャタリングが起きるため）。端から離れる動きは
+ * ヌル空間項（q_pref への引き戻し）が担う。
+ */
+export function limitAwareWeights(arm: ArmModel, q: Vec, w: Vec): Vec {
+  const margin = LIMIT_MARGIN;
   const gain = 200;
   return w.map((wi, i) => {
     if (arm.lockedJoint === i) return wi * 1e6;
     const dLo = q[i] - arm.qMin[i];
     const dHi = arm.qMax[i] - q[i];
     let f = 1;
-    const towardLo = dqTrial ? dqTrial[i] < 0 : true;
-    const towardHi = dqTrial ? dqTrial[i] > 0 : true;
-    if (dLo < margin && towardLo) f += gain * Math.pow((margin - dLo) / margin, 2);
-    if (dHi < margin && towardHi) f += gain * Math.pow((margin - dHi) / margin, 2);
+    if (dLo < margin) f += gain * Math.pow(Math.min(2, (margin - dLo) / margin), 2);
+    if (dHi < margin) f += gain * Math.pow(Math.min(2, (margin - dHi) / margin), 2);
     return wi * f;
   });
 }
+
+export const LIMIT_MARGIN = 0.15;
 
 /**
  * 重み付き・減衰付き最小二乗法の1ステップ：
@@ -182,8 +186,7 @@ export function ikStep(arm: ArmModel, q: Vec, dx: Vec, opt: IKOptions, includeNu
     const dqNull = matVec(N, pull);
     return dqTask.map((x, i) => x + dqNull[i]);
   };
-  const trial = solve(limitAwareWeights(arm, q, opt.w, null).map((x, i) => (arm.lockedJoint === i ? x : opt.w[i])));
-  return solve(limitAwareWeights(arm, q, opt.w, trial));
+  return solve(limitAwareWeights(arm, q, opt.w));
 }
 
 export function taskError(arm: ArmModel, q: Vec, target: Vec2, phiTarget?: number): Vec {
@@ -212,11 +215,21 @@ export function solveIK(
     // 1反復あたりの手先移動量を制限する（大きな跳びで可動範囲外に飛ぶのを防ぐ）
     const en = Math.hypot(e[0], e[1]);
     const sc = en > 0.02 ? 0.02 / en : 1;
-    const dq = ikStep(arm, q, e.map((x) => x * sc), opt, true);
+    let dq = ikStep(arm, q, e.map((x) => x * sc), opt, true);
+    // 関節の1反復の変化も 0.05 rad までに制限（可動範囲端での2周期振動を防ぐ）
+    const mx = Math.max(...dq.map(Math.abs));
+    if (mx > 0.05) dq = dq.map((x) => (x * 0.05) / mx);
     q = q.map((x, i) => x + dq[i]);
     err = Math.hypot(...taskError(arm, q, target, opt.phiTarget).slice(0, 2));
     const stepNorm = Math.sqrt(dq.reduce((s, x) => s + x * x, 0));
     if (err < tol && stepNorm < 1e-6) break;
+  }
+  // 仕上げ：タスク項のみで手先を目標に収束させる
+  for (let j = 0; j < 200 && err >= tol * 0.1; j++) {
+    const e = taskError(arm, q, target, opt.phiTarget);
+    const dq = ikStep(arm, q, e, opt, false);
+    q = q.map((x, i) => x + dq[i]);
+    err = Math.hypot(...taskError(arm, q, target, opt.phiTarget).slice(0, 2));
   }
   return { q, error: err, iterations: it };
 }
