@@ -94,6 +94,10 @@ export interface SquatOptions {
   /** 1サンプルあたりの修正の反復回数（多いほど、感じた重心の誤差をその場でよく直す） */
   iterations?: number;
   n?: number;
+  /** 各サンプルの制御のあとに、実際の関節角へ加える乱れ（運動ノイズなど）。未指定なら乱れなし */
+  perturb?: (q: Vec, k: number) => Vec;
+  /** 速度・加速度・時間の推定に使う移動平均の半幅（サンプル数）。ノイズの細かな揺れを差分で増幅しないため */
+  smoothing?: number;
 }
 
 export interface SquatResult {
@@ -134,21 +138,23 @@ export function simulateSquat(b: BodyModel, opts: SquatOptions = {}): SquatResul
       cur = cur.map((x, i) => x + dq[i]);
       seen = seen.map((x, i) => x + dq[i]);
     }
+    if (opts.perturb) cur = opts.perturb(cur, k);
     q.push(cur);
     qp.push(seen);
   }
 
   const com = q.map((x) => forward(b, x).com);
-  // 時間：目標時間と、最大角速度を守る最短時間の大きい方
+  // 速度・加速度・時間は（必要なら平滑化した）関節角から求める。関節角そのものは平滑化しない
+  const qs = opts.smoothing ? smoothSeries(q, opts.smoothing) : q;
   let T = task.duration;
-  for (let k = 1; k < n; k++) for (let i = 0; i < 3; i++) T = Math.max(T, (Math.abs(q[k][i] - q[k - 1][i]) * (n - 1)) / b.vMax[i]);
+  for (let k = 1; k < n; k++) for (let i = 0; i < 3; i++) T = Math.max(T, (Math.abs(qs[k][i] - qs[k - 1][i]) * (n - 1)) / b.vMax[i]);
   const dt = T / (n - 1);
-  const qd = q.map((_, k) => {
-    const a = q[Math.max(0, k - 1)], c = q[Math.min(n - 1, k + 1)];
+  const qd = qs.map((_, k) => {
+    const a = qs[Math.max(0, k - 1)], c = qs[Math.min(n - 1, k + 1)];
     const h = (Math.min(n - 1, k + 1) - Math.max(0, k - 1)) * dt;
     return a.map((x, i) => (c[i] - x) / h);
   });
-  const qdd = q.map((_, k) => (k === 0 || k === n - 1 ? [0, 0, 0] : q[k].map((x, i) => (q[k + 1][i] - 2 * x + q[k - 1][i]) / (dt * dt))));
+  const qdd = qs.map((_, k) => (k === 0 || k === n - 1 ? [0, 0, 0] : qs[k].map((x, i) => (qs[k + 1][i] - 2 * x + qs[k - 1][i]) / (dt * dt))));
   const tau = q.map((x, k) => inverseDynamics(b, x, qdd[k]));
   return { t, q, qPerceived: qp, qd, qdd, tau, com, target, T };
 }
@@ -196,4 +202,15 @@ export function squatMetrics(b: BodyModel, r: SquatResult, task: SquatTask = DEF
     tauPeak: [0, 1, 2].map((i) => Math.max(...r.tau.map((x) => Math.abs(x[i])))),
     qBottom: r.q[kb],
   };
+}
+
+/** 中心移動平均（半幅 h、端は窓を縮める）を2回かける */
+function smoothSeries(q: Vec[], h: number): Vec[] {
+  const once = (x: Vec[]) => x.map((_, k) => {
+    const a = Math.max(0, k - h), c = Math.min(x.length - 1, k + h);
+    const s = [0, 0, 0];
+    for (let j = a; j <= c; j++) for (let i = 0; i < 3; i++) s[i] += x[j][i];
+    return s.map((v) => v / (c - a + 1));
+  });
+  return once(once(q));
 }

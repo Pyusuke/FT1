@@ -1,5 +1,8 @@
 import { ReactNode, useState } from 'react';
 import { Step1Model } from './Step1Model';
+import { Step2Stimuli } from './Step2Stimuli';
+import { NO_STIMULI, STIMULUS_DEFAULTS, Stimuli } from '../../core/level4/stimuli';
+import { CostWeights, DEFAULT_COST_WEIGHTS, DEFAULT_MOTOR, MotorSettings } from '../../core/level4/trial';
 
 export const L4_DISCLAIMER =
   '本機能は、制御の仮説ごとの予測を示す概念モデルです。人の身体、身体感覚、膝サポーターの効果、特定の研究結果を再現したものではありません。';
@@ -16,8 +19,13 @@ export const L4_STEPS: { title: string; lead: string }[] = [
 
 export function Level4View() {
   const [step, setStep] = useState(0);
+  const [stimuli, setStimuli] = useState<Stimuli>({ ...NO_STIMULI, kneeSpring: STIMULUS_DEFAULTS.kneeSpring });
+  const [settings, setSettings] = useState<MotorSettings>(DEFAULT_MOTOR);
+  const [costW, setCostW] = useState<CostWeights>(DEFAULT_COST_WEIGHTS);
   let body: ReactNode;
   if (step === 0) body = <Step1Model />;
+  else if (step === 1)
+    body = <Step2Stimuli stimuli={stimuli} setStimuli={setStimuli} settings={settings} setSettings={setSettings} costW={costW} setCostW={setCostW} />;
   else body = <p className="muted">この手順は次のフェーズで実装します。</p>;
   return (
     <div>
